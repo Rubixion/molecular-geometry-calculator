@@ -816,12 +816,10 @@ function atomMat(hex) {
   if (_matCache[hex]) return _matCache[hex]
   const mat = new THREE.MeshPhysicalNodeMaterial()
   mat.colorNode              = color(new THREE.Color(hex))
-  mat.transparent            = false
-  mat.opacityNode            = float(1.0)
-  mat.roughnessNode          = float(1.0)
+  mat.roughnessNode          = float(0.5)
   mat.metalnessNode          = float(0.08)
   mat.clearcoatNode          = float(0.4)
-  mat.clearcoatRoughnessNode = float(1.0)
+  mat.clearcoatRoughnessNode = float(0.5)
   mat.emissiveNode           = color(0x6482d2).mul(fresnel()).mul(float(0.28))
   _matCache[hex] = mat
   return mat
@@ -830,12 +828,10 @@ function atomMat(hex) {
 const _selMat = (() => {
   const mat = new THREE.MeshPhysicalNodeMaterial()
   mat.colorNode              = color(0xc8d4ff)
-  mat.transparent            = false
-  mat.opacityNode            = float(1.0)
-  mat.roughnessNode          = float(1.0)
+  mat.roughnessNode          = float(0.38)
   mat.metalnessNode          = float(0.08)
   mat.clearcoatNode          = float(0.5)
-  mat.clearcoatRoughnessNode = float(1.0)
+  mat.clearcoatRoughnessNode = float(0.2)
   mat.emissiveNode           = color(0x5577dd).mul(float(0.4))
   return mat
 })()
@@ -1016,25 +1012,15 @@ document.getElementById('ap-close').addEventListener('click', hideAtomPanel)
 const raycaster = new THREE.Raycaster()
 const mouse     = new THREE.Vector2()
 
-let _downX = 0, _downY = 0
-renderer.domElement.addEventListener('pointerdown', e => { _downX = e.clientX; _downY = e.clientY })
-
 renderer.domElement.addEventListener('click', e => {
   if (!currentMol) return
-  if (Math.hypot(e.clientX - _downX, e.clientY - _downY) > 5) return
   const rect = renderer.domElement.getBoundingClientRect()
   mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1
   mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1
   raycaster.setFromCamera(mouse, camera)
   const hits = raycaster.intersectObjects(atomMeshes)
-  if (!hits.length) {
-    if (selectedMesh) { selectedMesh.material = atomMat(elColor(selectedMesh.userData.el)); selectedMesh = null; hideAtomPanel() }
-    return
-  }
+  if (!hits.length) return
   const mesh = hits[0].object
-  if (mesh === selectedMesh) {
-    mesh.material = atomMat(elColor(mesh.userData.el)); selectedMesh = null; hideAtomPanel(); return
-  }
   if (selectedMesh) selectedMesh.material = atomMat(elColor(selectedMesh.userData.el))
   selectedMesh  = mesh
   mesh.material = _selMat

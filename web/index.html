@@ -31,7 +31,7 @@
     #canvas-wrap { position: absolute; inset: 0; z-index: 1; }
     #canvas-wrap canvas { display: block; width: 100% !important; height: 100% !important; background: transparent; }
 
-    /* ── header ── */
+    /* header */
     #header {
       position: absolute; top: 0; left: 0; right: 0; z-index: 10;
       padding: 20px 28px;
@@ -63,7 +63,7 @@
     }
     #build-btn:hover { background: rgba(100,130,210,0.2); border-color: rgba(100,130,210,0.5); }
 
-    /* ── error toast ── */
+    /* error toast */
     #error {
       position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
       z-index: 20; padding: 8px 20px; border-radius: 8px;
@@ -73,20 +73,20 @@
     }
     #error.show { opacity: 1; }
 
-    /* ── loading ── */
+    /* loading */
     #loading {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
       z-index: 20; text-align: center; color: rgba(255,255,255,0.25);
       font-size: 10px; letter-spacing: 4px;
     }
 
-    /* ── shared panel base ── */
+    /* shared panel base */
     .panel {
       background: rgba(7,7,15,0.82); backdrop-filter: blur(20px);
       border: 1px solid var(--border); border-radius: 14px; padding: 14px 20px;
     }
 
-    /* ── bottom-left info ── */
+    /* bottom-left info */
     #info { position: absolute; bottom: 24px; left: 28px; z-index: 10; }
     .info-row { display: flex; gap: 24px; flex-wrap: wrap; }
     .info-item { display: flex; flex-direction: column; gap: 3px; }
@@ -94,15 +94,15 @@
     .val { color: #fff; font-size: 14px; font-weight: 700; min-width: 60px; }
     .val.accent { color: var(--cyan); }
 
-    /* ── right-side panel slot ── */
+    /* right-side panel slot */
     #right-panel { position: absolute; top: 72px; right: 28px; z-index: 10; min-width: 150px; display: flex; flex-direction: column; gap: 12px; }
 
-    /* ── legend ── */
+    /* legend */
     .leg-title { color: rgba(255,255,255,0.22); font-size: 8.5px; letter-spacing: 2.5px; text-transform: uppercase; margin-bottom: 10px; }
     .leg-row { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; font-size: 11px; color: rgba(255,255,255,0.45); }
     .leg-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 
-    /* ── atom detail panel ── */
+    /* atom detail panel */
     #atom-panel {
       display: none; flex-direction: column; gap: 0;
       width: 270px; max-height: calc(100vh - 220px); overflow-y: auto;
@@ -338,6 +338,7 @@
     <div class="help-row"><span class="help-key">Scroll</span><span class="help-desc">Zoom in &amp; out</span></div>
     <div class="help-row"><span class="help-key">Right-drag</span><span class="help-desc">Pan</span></div>
     <div class="help-row"><span class="help-key">Click atom</span><span class="help-desc">Show atom info</span></div>
+    <div class="help-row"><span class="help-key">R</span><span class="help-desc">Reset view</span></div>
     <div class="help-divider"></div>
     <div class="s-lbl" style="margin-bottom:6px">Load a molecule</div>
     <div class="help-hint">Type a name <em>water</em>, <em>caffeine</em>, <em>aspirin</em> — or a formula like <em>H&#x2082;O</em>, <em>Na&#x2082;SO&#x2084;</em> — then press Enter.</div>
@@ -349,7 +350,7 @@ import * as THREE from 'three/webgpu';
 const { color, float, normalWorld, positionWorld, cameraPosition, Fn } = THREE;
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ── Element database ──────────────────────────────────────────────────────────
+// Element database
 // Atomic number → symbol (index = Z)
 const ELEMENTS = [
   null,
@@ -364,7 +365,7 @@ const ELEMENTS = [
   'Tl','Pb','Bi','Po','At','Rn',
 ]
 
-// Single source of truth — color (0xRRGGBB) and radius (Å) live here too
+// atomic data 
 const EDATA_DEFAULT = { name:'Unknown', z:0, mass:0, en:null, cat:'Unknown', valence:4, color:0x8080a0, radius:0.34 }
 const EDATA = {
   H:  { name:'Hydrogen',   z:1,  mass:1.008,   en:2.20, cat:'Nonmetal',    valence:1, color:0xd0d0e4, radius:0.20 },
@@ -435,7 +436,7 @@ function elColor(el)  { return ed(el).color }
 function elRadius(el) { return ed(el).radius }
 function hexStr(n)    { return '#' + n.toString(16).padStart(6,'0') }
 
-// ── Ionic compound support ────────────────────────────────────────────────────
+// Ionic compound support
 const METALS = new Set([
   'Li','Na','K','Rb','Cs',
   'Be','Mg','Ca','Sr','Ba',
@@ -481,7 +482,7 @@ function parseFormula(raw) {
     if (!/[a-zA-Z]/.test(raw[i])) { i++; continue }
     let el = raw[i].toUpperCase()
     i++
-    // Try two-letter symbol; validate against EDATA before committing
+    // Try two-letter symbol and validate against EDATA before committing
     if (i < raw.length && /[a-zA-Z]/.test(raw[i])) {
       const two = el + raw[i].toLowerCase()
       if (EDATA[two]) { el = two; i++ }
@@ -585,7 +586,7 @@ function buildIonicMol(parsedAtoms, ionicName) {
   return {formula:ionicName??formula, mw, atoms, bonds, ionic:true}
 }
 
-// ── PubChem fetch ─────────────────────────────────────────────────────────────
+// PubChem fetch
 // Only entries where fastformula returns an ambiguous/wrong CID
 const FORMULA_NAME = {
   'H2CO3':'carbonic acid',
@@ -665,16 +666,16 @@ async function fetchMolecule(input) {
   const save   = m => { molCache[key] = m; return m }
   const notAbort = e => e.name !== 'AbortError'
 
-  // 1. Mapped name — for formulas with non-obvious or ambiguous IUPAC representation
+  // 1. Mapped name for formulas with non-obvious or ambiguous IUPAC representation
   if (mapped) {
     try { return save(await fetchByName(mapped, signal)) } catch(e) { if (!notAbort(e)) throw e }
   }
-  // 2. Input as-is — handles IUPAC names, common names ("aspirin", "glucose")
+  // 2. Input as-is - handles IUPAC names, common names ("aspirin", "glucose")
   try { return save(await fetchByName(input.trim(), signal)) } catch(e) { if (!notAbort(e)) throw e }
   // 3. fastformula → CID → 3D — most reliable path for molecular formulas
   try { return save(await fetchByFormula(upper, signal)) } catch(e) { if (!notAbort(e)) throw e }
 
-  // 4. Ionic compound — derive common name from formula, try PubChem by name, then synthetic
+  // 4. Ionic compound - get common name from formula try PubChem then other stuff
   const parsedAtoms = parseFormula(input.trim())
   if (parsedAtoms.length) {
     const ionicName = nameIonicCompound(parsedAtoms)
@@ -683,7 +684,7 @@ async function fetchMolecule(input) {
         const m = await fetchByName(ionicName, signal)
         return save({...m, formula:ionicName, ionic:true})
       } catch(e) { if (!notAbort(e)) throw e }
-      // Fully synthetic formula-unit structure as last resort
+      // last resort pls work
       return save(buildIonicMol(parsedAtoms, ionicName))
     }
   }
@@ -691,7 +692,7 @@ async function fetchMolecule(input) {
   throw new Error(`"${input}" not found — try the full name or a formula like "Na2SO4"`)
 }
 
-// ── Geometry analysis ─────────────────────────────────────────────────────────
+// Geometry analysis
 const GEO_BY_NC = { 2:'Linear', 3:'Trigonal Planar', 4:'Tetrahedral', 5:'Trigonal Bipyramidal', 6:'Octahedral' }
 
 function analyzeGeometry(atoms, bonds) {
@@ -718,7 +719,7 @@ function analyzeGeometry(atoms, bonds) {
   if (neighbors.length === 3 && lonePairs === 1) geoName = 'Trigonal Pyramidal'
   if (neighbors.length === 2 && lonePairs >= 1)  geoName = 'Bent'
 
-  // Compute bond angle from 3D positions (only for uniform-angle molecules)
+  // Compute bond angle from 3D positions
   let bondAngle = null
   if (neighbors.length >= 2) {
     const cx = central.x, cy = central.y, cz = central.z
@@ -741,7 +742,7 @@ function analyzeGeometry(atoms, bonds) {
   return {geoName, bondAngle}
 }
 
-// ── Per-atom detail ───────────────────────────────────────────────────────────
+// atom details
 function atomDetailInfo(atom, allAtoms, bonds) {
   const V         = ed(atom.el).valence ?? 4
   const myBonds   = bonds.filter(b => b.a===atom.id || b.b===atom.id)
@@ -783,7 +784,7 @@ function atomDetailInfo(atom, allAtoms, bonds) {
   return {lonePairs, formalCharge, hyb, neighborBonds, angles, bondSum}
 }
 
-// ── Three.js / WebGPU setup ───────────────────────────────────────────────────
+// Three.js / WebGPU setup
 const wrap   = document.getElementById('canvas-wrap')
 const scene  = new THREE.Scene()
 scene.background = null
@@ -831,7 +832,7 @@ const keyLight  = new THREE.DirectionalLight(0x9fb2ff, 1.0);  keyLight.position.
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.45); fillLight.position.set(-5,-2, 4); scene.add(fillLight)
 const rimLight  = new THREE.DirectionalLight(0x6482d2, 0.8);  rimLight.position.set(-4, 4,-6);  scene.add(rimLight)
 
-// ── TSL fresnel rim glow ────────────────────────────────────────────────────────────────────────────
+// TSL fresnel rim glow
 const fresnel = Fn(() => {
   const v = cameraPosition.sub(positionWorld).normalize()
   return float(1.0).sub(normalWorld.dot(v).saturate()).pow(float(3.0))
@@ -875,7 +876,7 @@ const _bondMat = (() => {
   return mat
 })()
 
-// ── Molecule scene ────────────────────────────────────────────────────────────
+// Molecule scene
 const molGroup = new THREE.Group()
 scene.add(molGroup)
 
@@ -942,7 +943,8 @@ function renderMol(mol) {
     maxR = Math.max(maxR, Math.sqrt(dx*dx+dy*dy+dz*dz))
   })
   const fovRad = camera.fov * Math.PI / 180
-  _zoomTarget = Math.max(3.5, Math.min(22, (maxR + 0.9) / Math.sin(fovRad/2) * 1.1))
+  _fitDist = Math.max(3.5, Math.min(22, (maxR + 0.9) / Math.sin(fovRad/2) * 1.1))
+  _zoomTarget = _fitDist
 
   const posMap = {}
   mol.atoms.forEach(a => {
@@ -974,7 +976,7 @@ function renderMol(mol) {
 
 }
 
-// ── Atom detail panel ─────────────────────────────────────────────────────────
+// Atom detail panel
 const atomPanel = document.getElementById('atom-panel')
 const legPanel  = document.getElementById('leg-panel')
 
@@ -1049,7 +1051,7 @@ function hideAtomPanel() {
 
 document.getElementById('ap-close').addEventListener('click', hideAtomPanel)
 
-// ── Raycaster ─────────────────────────────────────────────────────────────────
+// Raycaster
 const raycaster = new THREE.Raycaster()
 const mouse     = new THREE.Vector2()
 
@@ -1100,7 +1102,7 @@ renderer.domElement.addEventListener('click', e => {
   if (atom) showAtomPanel(atom)
 })
 
-// ── Build ─────────────────────────────────────────────────────────────────────
+// Build
 const inputEl = document.getElementById('molecule-input')
 const errEl   = document.getElementById('error')
 let errTimer
@@ -1128,9 +1130,18 @@ async function buildMol(query) {
 document.getElementById('build-btn').addEventListener('click', () => buildMol(inputEl.value))
 inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') buildMol(inputEl.value) })
 controls.addEventListener('start', () => { controls.autoRotate = false })
-window.addEventListener('keydown', e => { if (e.key === 'Escape') hideAtomPanel() })
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideAtomPanel()
+  if ((e.key === 'r' || e.key === 'R') && !e.target.matches('input')) {
+    controls.target.set(0, 0, 0)
+    const initDir = new THREE.Vector3(0, 1.5, 8).normalize()
+    camera.position.copy(initDir).multiplyScalar(_fitDist)
+    controls.update()
+  }
+})
 
 let _zoomTarget = null
+let _fitDist = 8
 
 renderer.setAnimationLoop(() => {
   if (_zoomTarget !== null) {
@@ -1150,9 +1161,9 @@ window.addEventListener('resize', () => {
   renderer.setSize(wrap.clientWidth, wrap.clientHeight)
 })
 
-// ── Settings ───────────────────────────────────────────────────────────────────────────────────
+// Settings
 ;(()=>{
-  // ── settings ──
+  // settings
   const sBtn   = document.getElementById('settings-btn')
   const sPanel = document.getElementById('settings-panel')
   const hBtn   = document.getElementById('help-btn')

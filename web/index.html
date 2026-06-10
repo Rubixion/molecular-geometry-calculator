@@ -112,12 +112,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
+  <script>
+    // catch import errors before the module loads
+    window.addEventListener('error', e => {
+      const el = document.getElementById('loading')
+      if (el) el.textContent = 'Error: ' + (e.message || e.type)
+    })
+    window.addEventListener('unhandledrejection', e => {
+      const el = document.getElementById('loading')
+      if (el) el.textContent = 'Error: ' + (e.reason?.message || e.reason || 'unknown')
+    })
+  </script>
+
   <script type="importmap">
   {
     "imports": {
       "three":         "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
       "three/webgpu":  "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.webgpu.js",
-      "three/tsl":     "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.tsl.js",
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
     }
   }
@@ -146,7 +157,7 @@
         <div class="info-item"><span class="lbl">Geometry</span><span class="val" id="v-geo">—</span></div>
         <div class="info-item"><span class="lbl">Bond Angle</span><span class="val" id="v-ang">—</span></div>
         <div class="info-item"><span class="lbl">Bonds</span><span class="val" id="v-bnd">—</span></div>
-        <div class="info-item"><span class="lbl">Lone Pairs</span><span class="val" id="v-lp">—</span></div>
+        <div class="info-item"><span class="lbl">Atoms</span><span class="val" id="v-lp">—</span></div>
       </div>
     </div>
   </div>
@@ -160,152 +171,169 @@
 
 <script type="module">
 import * as THREE from 'three/webgpu';
-import { color, float, normalWorld, positionWorld, cameraPosition, Fn } from 'three/tsl';
+const { color, float, normalWorld, positionWorld, cameraPosition, Fn } = THREE;
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ── VSEPR tables ─────────────────────────────────────────────────────────────
+// ── Element data ──────────────────────────────────────────────────────────────
+// Atomic number → symbol (index = atomic number)
+const ELEMENTS = [
+  null,
+  'H' ,'He','Li','Be','B' ,'C' ,'N' ,'O' ,'F' ,'Ne',
+  'Na','Mg','Al','Si','P' ,'S' ,'Cl','Ar','K' ,'Ca',
+  'Sc','Ti','V' ,'Cr','Mn','Fe','Co','Ni','Cu','Zn',
+  'Ga','Ge','As','Se','Br','Kr','Rb','Sr','Y' ,'Zr',
+  'Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn',
+  'Sb','Te','I' ,'Xe','Cs','Ba','La','Ce','Pr','Nd',
+  'Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb',
+  'Lu','Hf','Ta','W' ,'Re','Os','Ir','Pt','Au','Hg',
+  'Tl','Pb','Bi','Po','At','Rn',
+]
 
+// CPK-ish colours tuned for dark background
+const ATOM_COLOR = {
+  H:0xd0d0e4, He:0xa8d8ea,
+  Li:0xdc143c, Be:0x9acd32, B:0xffb5c5,
+  C:0x505060,  N:0x3355ff,  O:0xff2828, F:0x44ee44, Ne:0x88c8e8,
+  Na:0xab5cf2, Mg:0x8aff00, Al:0xbfa6a6, Si:0x8090a0,
+  P:0xff8800,  S:0xffcc00,  Cl:0x00cc00, Ar:0x70c8e0,
+  K:0x8f40d4,  Ca:0x3dff00,
+  Fe:0xe06633, Co:0xf090a0, Ni:0x50d050, Cu:0xc88533, Zn:0x7d80b0,
+  As:0x74d050, Se:0xffa100, Br:0xa02020, Kr:0x5cb8d1,
+  Pd:0x006985, Ag:0xc0c0c0, I:0x940094,  Xe:0x429eb0,
+  Pt:0xd0d0e0, Au:0xffd123, Hg:0xb8b8d0, Pb:0x575961,
+}
+// Van-der-Waals-ish radii scaled for the scene
+const ATOM_RADIUS = {
+  H:0.20,  He:0.16,
+  Li:0.46, Be:0.38, B:0.34,  C:0.32, N:0.30, O:0.28, F:0.26, Ne:0.22,
+  Na:0.50, Mg:0.44, Al:0.42, Si:0.38, P:0.36, S:0.36, Cl:0.38, Ar:0.32,
+  K:0.56,  Ca:0.50,
+  Fe:0.38, Co:0.36, Ni:0.34, Cu:0.36, Zn:0.36,
+  As:0.36, Se:0.38, Br:0.42, Kr:0.38,
+  Ag:0.42, I:0.50,  Xe:0.44,
+  Au:0.42, Pt:0.40, Hg:0.42, Pb:0.46,
+}
+function elColor(el)  { return ATOM_COLOR[el]  ?? 0x8080a0 }
+function elRadius(el) { return ATOM_RADIUS[el] ?? 0.34 }
+
+// ── Valence data (for lone-pair count in info panel) ──────────────────────────
 const VALENCE = {
   H:1, He:2, Li:1, Be:2, B:3, C:4, N:5, O:6, F:7, Ne:8,
   Na:1, Mg:2, Al:3, Si:4, P:5, S:6, Cl:7, Ar:8,
-  K:1, Ca:2, Br:7, I:7, Xe:8, Se:6, As:5, Ge:4, Sn:4
-}
-const OCTET = {
-  H:2, He:2, Li:8, Be:8, B:6, C:8, N:8, O:8, F:8, Ne:8,
-  Na:8, Mg:8, Al:8, Si:8, P:8, S:8, Cl:8, Ar:8,
-  K:8, Ca:8, Br:8, I:8, Xe:8, Se:8, As:8, Ge:8, Sn:8
+  K:1,  Ca:2, Br:7, I:7,  Xe:8, Se:6, As:5, Ge:4, Sn:4,
+  Fe:2, Cu:2, Zn:2, Pb:2, Au:3, Pt:2,
 }
 
-// CPK colours tuned for dark/glowing aesthetic
-const ATOM_HEX = {
-  H:0xc8c8dc, C:0x585868, N:0x3050ff, O:0xff2828,
-  F:0x38cc38, Cl:0x18c018, Br:0xa02020, I:0x780088,
-  S:0xd4c018, P:0xff6808, Na:0xaa18ff, K:0x7818ff,
-  Ca:0x787800, Si:0x8090a0, default:0x8088aa
-}
-const ATOM_R = {
-  H:0.22, C:0.34, N:0.30, O:0.28, F:0.26, Cl:0.40,
-  Br:0.44, I:0.50, S:0.36, P:0.36, Si:0.38, default:0.32
-}
-const BOND_L = 1.52
-
-const ALIASES = {
-  water:'H2O', methane:'CH4', ammonia:'NH3',
-  'carbon dioxide':'CO2', 'hydrogen fluoride':'HF',
-  'boron trifluoride':'BF3', 'hydrogen sulfide':'H2S',
-  'phosphorus trichloride':'PCl3', 'carbon tetrachloride':'CCl4',
-  'sulfur dioxide':'SO2', 'nitrogen trifluoride':'NF3',
-}
-
-const GEO_NAMES = {
-  '1,0':['Linear (diatomic)','—'],
-  '2,0':['Linear','180°'],
-  '3,0':['Trigonal Planar','120°'],
-  '3,1':['Bent','~115°'],
-  '4,0':['Tetrahedral','109.5°'],
-  '4,1':['Trigonal Pyramidal','107°'],
-  '4,2':['Bent','104.5°'],
+// ── PubChem fetch ─────────────────────────────────────────────────────────────
+// Maps common formula-style strings to names PubChem recognises
+const FORMULA_NAME = {
+  'H2O':'water','CH4':'methane','NH3':'ammonia','CO2':'carbon dioxide',
+  'C2H4':'ethylene','C2H6':'ethane','C2H2':'acetylene',
+  'BF3':'boron trifluoride','HF':'hydrogen fluoride','HCl':'hydrogen chloride',
+  'H2S':'hydrogen sulfide','PCl3':'phosphorus trichloride',
+  'CCl4':'carbon tetrachloride','SO2':'sulfur dioxide','SO3':'sulfur trioxide',
+  'NF3':'nitrogen trifluoride','HCN':'hydrogen cyanide',
+  'CH2O':'formaldehyde','H2CO':'formaldehyde',
+  'C6H6':'benzene','C3H8':'propane','C4H10':'butane','C5H12':'pentane',
+  'CH3OH':'methanol','C2H5OH':'ethanol','CH3COOH':'acetic acid',
+  'H2O2':'hydrogen peroxide','O3':'ozone','CO':'carbon monoxide',
+  'NO2':'nitrogen dioxide','N2O':'nitrous oxide','NO':'nitric oxide',
+  'NaCl':'sodium chloride','H2SO4':'sulfuric acid','HNO3':'nitric acid',
+  'H3PO4':'phosphoric acid','C6H12O6':'glucose','C12H22O11':'sucrose',
+  'N2':'nitrogen','O2':'oxygen','Cl2':'chlorine','F2':'fluorine','I2':'iodine',
+  'H2':'hydrogen',
 }
 
-// ── VSEPR logic ───────────────────────────────────────────────────────────────
+const molCache = {}
 
-function parseFormula(raw) {
-  const formula = ALIASES[raw.trim().toLowerCase()] ?? raw.trim()
-  const re = /([A-Z][a-z]?)(\d*)/g
-  const atoms = []
-  let m
-  while ((m = re.exec(formula)) !== null) {
-    if (!m[1]) continue
-    const el = m[1], n = parseInt(m[2]||'1')
-    if (!(el in VALENCE)) throw new Error(`Unknown element: ${el}`)
-    atoms.push({ el, n })
-  }
-  if (!atoms.length) throw new Error('Cannot parse formula')
-  return { atoms, formula }
-}
+async function fetchMolecule(input) {
+  const key = input.trim().toLowerCase()
+  if (molCache[key]) return molCache[key]
 
-function vsepr(raw) {
-  const { atoms, formula } = parseFormula(raw)
+  const name = FORMULA_NAME[input.trim().toUpperCase()] ?? input.trim()
+  const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/` +
+              `${encodeURIComponent(name)}/record/JSON?record_type=3d`
 
-  let wants = 0, got = 0, totalAtoms = 0
-  let central = null
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`"${input}" not found — try a name like "ethylene"`)
 
-  for (const { el, n } of atoms) {
-    wants      += (OCTET[el]   ?? 8) * n
-    got        += (VALENCE[el] ?? 4) * n
-    totalAtoms += n
-    if (n === 1) central = el   // last single-count = central atom
-  }
-  if (!central) central = atoms[0].el
+  const data = await res.json()
+  const cmp  = data.PC_Compounds?.[0]
+  if (!cmp) throw new Error('No compound data returned')
 
-  const ligandCount = totalAtoms - 1
-  const bonds       = (wants - got) / 2
-  const midwant     = OCTET[central] ?? 8
-  let   lp          = Math.max(0, (midwant - bonds * 2) / 2)
-  if (ligandCount === 1) lp = 0   // diatomic: no lone pair display
+  const conf = cmp.coords?.[0]?.conformers?.[0]
+  if (!conf) throw new Error(`No 3D structure for "${input}" in PubChem`)
 
-  // Build ligand array
-  const ligands = []
-  for (const { el, n } of atoms) {
-    const skip = (el === central) ? 1 : 0
-    for (let i = skip; i < n; i++) ligands.push(el)
+  const aids    = cmp.atoms.aid
+  const atomEls = cmp.atoms.element.map(n => ELEMENTS[n] ?? 'X')
+
+  const atoms = aids.map((id, i) => ({
+    id, el: atomEls[i],
+    x: conf.x[i], y: conf.y[i], z: conf.z?.[i] ?? 0,
+  }))
+
+  const bonds = []
+  if (cmp.bonds) {
+    for (let i = 0; i < cmp.bonds.aid1.length; i++)
+      bonds.push({ a: cmp.bonds.aid1[i], b: cmp.bonds.aid2[i], order: cmp.bonds.order?.[i] ?? 1 })
   }
 
-  return { formula, central, ligands, bonds, lp, ligandCount }
+  const formula = cmp.props?.find(p => p.urn?.label === 'Molecular Formula')?.value?.sval
+                ?? input.toUpperCase()
+
+  const mol = { formula, atoms, bonds }
+  molCache[key] = mol
+  return mol
 }
 
-// ── 3D positions ──────────────────────────────────────────────────────────────
-
-const D = Math.PI / 180
-
-function ligandPos(lc, lp) {
-  const d = lc + lp   // total electron domains
-  const L = BOND_L
-
-  if (lc === 1) return [new THREE.Vector3(L,0,0)]
-
-  if (d === 2)
-    return [new THREE.Vector3(L,0,0), new THREE.Vector3(-L,0,0)]
-
-  if (d === 3) {
-    if (lp === 0)
-      return [0,120,240].map(a => new THREE.Vector3(L*Math.cos(a*D), 0, L*Math.sin(a*D)))
-    const h = 57.5*D
-    return [new THREE.Vector3(L*Math.sin(h),-L*Math.cos(h),0),
-            new THREE.Vector3(-L*Math.sin(h),-L*Math.cos(h),0)]
-  }
-
-  if (d === 4) {
-    if (lp === 0) {
-      const s = L/Math.sqrt(3)
-      return [new THREE.Vector3(s,s,s), new THREE.Vector3(s,-s,-s),
-              new THREE.Vector3(-s,s,-s), new THREE.Vector3(-s,-s,s)]
-    }
-    if (lp === 1) {
-      const th = 68.1*D, rh = L*Math.sin(th), ry = -L*Math.cos(th)
-      return [0,120,240].map(a => new THREE.Vector3(rh*Math.cos(a*D), ry, rh*Math.sin(a*D)))
-    }
-    const h = 52.25*D
-    return [new THREE.Vector3(L*Math.sin(h),-L*Math.cos(h),0),
-            new THREE.Vector3(-L*Math.sin(h),-L*Math.cos(h),0)]
-  }
-
-  // fallback: ring
-  return Array.from({length:lc}, (_,i) => {
-    const a = (360/lc*i)*D
-    return new THREE.Vector3(L*Math.cos(a), 0, L*Math.sin(a))
-  })
+// ── Geometry analysis (own code) ──────────────────────────────────────────────
+const GEO_BY_NC = {
+  1:'Diatomic', 2:'Linear', 3:'Trigonal Planar',
+  4:'Tetrahedral', 5:'Trigonal Bipyramidal', 6:'Octahedral',
 }
 
-function lpPos(lc, lp) {
-  const d = lc + lp, L = BOND_L * 1.28
-  if (d === 3 && lp === 1) return [new THREE.Vector3(0,L,0)]
-  if (d === 4 && lp === 1) return [new THREE.Vector3(0,L,0)]
-  if (d === 4 && lp === 2) {
-    const s = L/Math.sqrt(3)
-    return [new THREE.Vector3(-s,s,s), new THREE.Vector3(s,s,-s)]
+function analyzeGeometry(atoms, bonds) {
+  // count bonds per atom id
+  const bc = {}
+  atoms.forEach(a => { bc[a.id] = 0 })
+  bonds.forEach(b => { bc[b.a] = (bc[b.a]||0)+1; bc[b.b] = (bc[b.b]||0)+1 })
+
+  // most-connected heavy (non-H) atom is the "central" atom for display
+  const heavy   = atoms.filter(a => a.el !== 'H')
+  const central = heavy.length
+    ? heavy.reduce((best, a) => bc[a.id] > bc[best.id] ? a : best)
+    : atoms[0]
+
+  const neighborIds = bonds
+    .filter(b => b.a === central.id || b.b === central.id)
+    .map(b => b.a === central.id ? b.b : b.a)
+  const neighbors = neighborIds.map(id => atoms.find(a => a.id === id)).filter(Boolean)
+
+  // measure actual bond angle between first two neighbors
+  let angleDeg = '—'
+  if (neighbors.length >= 2) {
+    const c  = new THREE.Vector3(central.x, central.y, central.z)
+    const v1 = new THREE.Vector3(neighbors[0].x, neighbors[0].y, neighbors[0].z).sub(c).normalize()
+    const v2 = new THREE.Vector3(neighbors[1].x, neighbors[1].y, neighbors[1].z).sub(c).normalize()
+    const a  = Math.acos(Math.max(-1, Math.min(1, v1.dot(v2))))
+    angleDeg = Math.round(a * 180 / Math.PI) + '°'
   }
-  return []
+
+  // lone pairs on central atom from valence
+  const v       = VALENCE[central.el] ?? 4
+  const bondsN  = bc[central.id] ?? 0
+  const lonePairs = Math.max(0, Math.floor((v - bondsN) / 2))
+
+  // geometry name: use lone pairs to disambiguate similar neighbor counts
+  let geoName = GEO_BY_NC[neighbors.length] ?? `${neighbors.length} bonds`
+  if (neighbors.length === 3 && lonePairs === 1) geoName = 'Trigonal Pyramidal'
+  if (neighbors.length === 2 && lonePairs >= 1) geoName = 'Bent'
+
+  return {
+    geoName, angleDeg, lonePairs,
+    bondCount: bonds.length,
+    atomCount: atoms.length,
+  }
 }
 
 // ── Three.js / WebGPU ─────────────────────────────────────────────────────────
@@ -318,174 +346,203 @@ scene.background = new THREE.Color(0x07070f)
 const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth/wrap.clientHeight, 0.1, 100)
 camera.position.set(0, 1.5, 8)
 
-const renderer = new THREE.WebGPURenderer({ antialias: true })
-renderer.setPixelRatio(window.devicePixelRatio)
-renderer.setSize(wrap.clientWidth, wrap.clientHeight)
-wrap.appendChild(renderer.domElement)
-await renderer.init()
-document.getElementById('loading').style.display = 'none'
+const loadEl = document.getElementById('loading')
+function log(msg) { console.log('[mol]', msg); loadEl.textContent = msg }
+
+async function createRenderer() {
+  const make = (forceWebGL) => {
+    const r = new THREE.WebGPURenderer({ antialias: true, forceWebGL })
+    r.setPixelRatio(window.devicePixelRatio)
+    r.setSize(wrap.clientWidth, wrap.clientHeight)
+    return r
+  }
+  log('checking navigator.gpu...')
+  if (navigator.gpu) {
+    log('requesting WebGPU adapter...')
+    const adapter = await navigator.gpu.requestAdapter().catch(() => null)
+    if (adapter) {
+      log('init WebGPU...')
+      try {
+        const r = make(false); wrap.appendChild(r.domElement)
+        await r.init(); log('WebGPU ready'); return r
+      } catch(e) { console.error(e); log('WebGPU failed — trying WebGL2...'); wrap.innerHTML = '' }
+    }
+  }
+  log('init WebGL2...')
+  const r = make(true); wrap.appendChild(r.domElement)
+  await r.init(); log('WebGL2 ready'); return r
+}
+
+const renderer = await createRenderer()
+loadEl.style.display = 'none'
 
 const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableDamping    = true
-controls.dampingFactor    = 0.07
-controls.autoRotate       = true
-controls.autoRotateSpeed  = 0.65
-controls.minDistance      = 2
-controls.maxDistance      = 22
+controls.enableDamping   = true
+controls.dampingFactor   = 0.07
+controls.autoRotate      = true
+controls.autoRotateSpeed = 0.6
+controls.minDistance     = 1.5
+controls.maxDistance     = 30
 
 // Lighting
 scene.add(new THREE.AmbientLight(0x4858a0, 0.65))
-const kl = new THREE.PointLight(0x6482d2, 110, 50)
-kl.position.set(6,6,6); scene.add(kl)
-const fl = new THREE.PointLight(0xffffff, 45, 50)
-fl.position.set(-6,-3,-6); scene.add(fl)
+const kl = new THREE.PointLight(0x6482d2, 110, 50); kl.position.set(6,6,6);   scene.add(kl)
+const fl = new THREE.PointLight(0xffffff,  45, 50); fl.position.set(-6,-3,-6); scene.add(fl)
 
-// ── TSL Fresnel rim glow ──────────────────────────────────────────────────────
-
+// ── TSL fresnel glow ──────────────────────────────────────────────────────────
 const fresnel = Fn(() => {
   const v = cameraPosition.sub(positionWorld).normalize()
   return float(1.0).sub(normalWorld.dot(v).saturate()).pow(float(3.0))
 })
 
+// Cache materials by hex to avoid redundant TSL compilation
+const _matCache = {}
 function atomMat(hex) {
+  if (_matCache[hex]) return _matCache[hex]
   const mat = new THREE.MeshPhysicalNodeMaterial()
   mat.colorNode              = color(new THREE.Color(hex))
-  mat.roughnessNode          = float(0.10)
+  mat.roughnessNode          = float(0.12)
   mat.metalnessNode          = float(0.0)
   mat.clearcoatNode          = float(1.0)
-  mat.clearcoatRoughnessNode = float(0.04)
-  // Ollie-cyan rim glow via TSL fresnel
-  mat.emissiveNode = color(0x6482d2).mul(fresnel()).mul(float(0.75))
+  mat.clearcoatRoughnessNode = float(0.05)
+  mat.emissiveNode           = color(0x6482d2).mul(fresnel()).mul(float(0.7))
+  _matCache[hex] = mat
   return mat
 }
 
-function bondMat() {
+const _bondMat = (() => {
   const mat = new THREE.MeshStandardNodeMaterial()
   mat.colorNode     = color(0x242c5c)
   mat.roughnessNode = float(0.45)
   mat.metalnessNode = float(0.28)
   mat.emissiveNode  = color(0x3040a0).mul(float(0.18))
   return mat
-}
+})()
 
-function lpMat() {
-  const mat = new THREE.MeshStandardNodeMaterial()
-  mat.colorNode     = color(0x6482d2)
-  mat.roughnessNode = float(1.0)
-  mat.metalnessNode = float(0.0)
-  mat.emissiveNode  = color(0x6482d2).mul(float(0.4))
-  mat.transparent   = true
-  mat.opacityNode   = float(0.2)
-  return mat
-}
-
-// ── Scene ─────────────────────────────────────────────────────────────────────
-
-let molGroup = new THREE.Group()
+// ── Scene objects ─────────────────────────────────────────────────────────────
+const molGroup = new THREE.Group()
 scene.add(molGroup)
 
 function clearMol() {
-  molGroup.traverse(o => {
-    if (o.geometry) o.geometry.dispose()
-    if (o.material) o.material.dispose()
-  })
+  molGroup.traverse(o => { if (o.geometry) o.geometry.dispose() })
   molGroup.clear()
 }
 
 function addAtom(pos, el) {
-  const r = ATOM_R[el] ?? ATOM_R.default
-  const h = ATOM_HEX[el] ?? ATOM_HEX.default
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r,28,28), atomMat(h))
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(elRadius(el), 48, 32),
+    atomMat(elColor(el))
+  )
   mesh.position.copy(pos)
   molGroup.add(mesh)
 }
 
-function addBond(a, b) {
-  const dir = new THREE.Vector3().subVectors(b, a)
-  const len = dir.length()
-  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5)
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,len,12), bondMat())
-  mesh.position.copy(mid)
-  if (len > 0.001)
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize())
-  molGroup.add(mesh)
+function addBond(pA, pB, order = 1) {
+  const dir     = new THREE.Vector3().subVectors(pB, pA)
+  const len     = dir.length()
+  if (len < 0.01) return
+  const normDir = dir.clone().normalize()
+  const mid     = new THREE.Vector3().lerpVectors(pA, pB, 0.5)
+  const quat    = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), normDir)
+
+  if (order === 1) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,len,12), _bondMat)
+    m.position.copy(mid); m.quaternion.copy(quat)
+    molGroup.add(m)
+  } else {
+    // perpendicular offset for double/triple bonds
+    const up   = Math.abs(normDir.y) < 0.85
+                   ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0)
+    const perp = new THREE.Vector3().crossVectors(normDir, up).normalize()
+    const offsets = order === 2 ? [-0.09, 0.09] : [-0.12, 0, 0.12]
+    const r       = order === 2 ? 0.05 : 0.04
+    offsets.forEach(d => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,10), _bondMat)
+      m.position.copy(mid).addScaledVector(perp, d)
+      m.quaternion.copy(quat)
+      molGroup.add(m)
+    })
+  }
 }
 
-function addLP(pos) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.22,14,14), lpMat())
-  mesh.position.copy(pos)
-  molGroup.add(mesh)
-}
-
-function buildMol(raw) {
+// ── Render molecule from PubChem data ─────────────────────────────────────────
+function renderMol({ formula, atoms, bonds }) {
   clearMol()
-  const { formula, central, ligands, bonds, lp, ligandCount } = vsepr(raw)
-  const atomPositions = ligandPos(ligandCount, lp)
-  const lpPositions   = lpPos(ligandCount, lp)
-  const [geoName, angle] = GEO_NAMES[`${ligandCount+lp},${lp}`] ?? ['Unknown','—']
 
-  const origin = new THREE.Vector3()
-  addAtom(origin, central)
-  atomPositions.forEach((p,i) => { addAtom(p, ligands[i]??'H'); addBond(origin, p) })
-  lpPositions.forEach(p => addLP(p))
+  // centre the molecule
+  let cx=0, cy=0, cz=0
+  atoms.forEach(a => { cx+=a.x; cy+=a.y; cz+=a.z })
+  cx/=atoms.length; cy/=atoms.length; cz/=atoms.length
+
+  const SCALE = 1.3
+  const posMap = {}
+  atoms.forEach(a => {
+    const p = new THREE.Vector3((a.x-cx)*SCALE, (a.y-cy)*SCALE, (a.z-cz)*SCALE)
+    posMap[a.id] = p
+    addAtom(p, a.el)
+  })
+  bonds.forEach(b => addBond(posMap[b.a], posMap[b.b], b.order))
 
   // info panel
+  const { geoName, angleDeg, lonePairs, bondCount, atomCount } = analyzeGeometry(atoms, bonds)
   document.getElementById('v-mol').textContent = formula
   document.getElementById('v-geo').textContent = geoName
-  document.getElementById('v-ang').textContent = angle
-  document.getElementById('v-bnd').textContent = bonds
-  document.getElementById('v-lp').textContent  = lp
+  document.getElementById('v-ang').textContent = angleDeg
+  document.getElementById('v-bnd').textContent = bondCount
+  document.getElementById('v-lp').textContent  = atomCount
 
-  // legend
-  const unique = [central, ...new Set(ligands)]
-  const panel  = document.getElementById('leg-panel')
-  panel.innerHTML =
+  // atom legend
+  const unique = [...new Set(atoms.map(a => a.el))]
+  document.getElementById('leg-panel').innerHTML =
     `<div class="leg-title">ATOMS</div>` +
     unique.map(el => {
-      const hex = '#' + (ATOM_HEX[el]??ATOM_HEX.default).toString(16).padStart(6,'0')
+      const hex = '#' + elColor(el).toString(16).padStart(6,'0')
       return `<div class="leg-row"><div class="leg-dot" style="background:${hex}"></div><span>${el}</span></div>`
-    }).join('') +
-    (lp > 0
-      ? `<div class="leg-row"><div class="leg-dot" style="background:rgba(100,130,210,0.25);border:1px solid rgba(100,130,210,0.5)"></div><span style="color:rgba(255,255,255,0.25)">lone pair</span></div>`
-      : '')
+    }).join('')
 
   controls.autoRotate = true
 }
 
-// ── Input handling ────────────────────────────────────────────────────────────
-
+// ── Async build ───────────────────────────────────────────────────────────────
 const inputEl = document.getElementById('molecule-input')
 const errEl   = document.getElementById('error')
 let errTimer
 
 function showErr(msg) {
-  errEl.textContent = msg
-  errEl.classList.add('show')
+  errEl.textContent = msg; errEl.classList.add('show')
   clearTimeout(errTimer)
-  errTimer = setTimeout(() => errEl.classList.remove('show'), 3500)
+  errTimer = setTimeout(() => errEl.classList.remove('show'), 4500)
 }
 
-function tryBuild(f) {
-  if (!f.trim()) return
-  try { buildMol(f) } catch(e) { showErr(e.message ?? 'Cannot parse molecule') }
+async function buildMol(query) {
+  if (!query.trim()) return
+  loadEl.textContent = `loading ${query}...`
+  loadEl.style.display = 'block'
+  try {
+    const mol = await fetchMolecule(query)
+    loadEl.style.display = 'none'
+    renderMol(mol)
+  } catch(e) {
+    loadEl.style.display = 'none'
+    showErr(e.message ?? 'Failed to load molecule')
+  }
 }
 
-document.getElementById('build-btn').addEventListener('click', () => tryBuild(inputEl.value))
-inputEl.addEventListener('keydown', e => { if (e.key==='Enter') tryBuild(inputEl.value) })
-controls.addEventListener('start', () => controls.autoRotate = false)
+// ── Input handling ────────────────────────────────────────────────────────────
+document.getElementById('build-btn').addEventListener('click', () => buildMol(inputEl.value))
+inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') buildMol(inputEl.value) })
+controls.addEventListener('start', () => { controls.autoRotate = false })
 
-const EXAMPLES = ['H2O','CH4','NH3','CO2','BF3','HF','H2S','PCl3','CCl4','SO2','NF3']
+const EXAMPLES = ['H2O','CH4','NH3','CO2','C2H4','C6H6','C2H2','H2S','PCl3','CCl4','SO2','BF3']
 const exWrap = document.getElementById('examples')
 EXAMPLES.forEach(ex => {
   const b = document.createElement('button')
-  b.className = 'chip'
-  b.textContent = ex
-  b.addEventListener('click', () => { inputEl.value = ex; tryBuild(ex) })
+  b.className = 'chip'; b.textContent = ex
+  b.addEventListener('click', () => { inputEl.value = ex; buildMol(ex) })
   exWrap.appendChild(b)
 })
 
 // ── Render loop ───────────────────────────────────────────────────────────────
-
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera) })
 
 window.addEventListener('resize', () => {
@@ -494,7 +551,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(wrap.clientWidth, wrap.clientHeight)
 })
 
-tryBuild('H2O')
+buildMol('water')
 </script>
 </body>
 </html>

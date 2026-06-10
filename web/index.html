@@ -930,6 +930,7 @@ function renderMol(mol) {
   selectedMesh = null
   currentMol   = mol
   hideAtomPanel()
+  controls.target.set(0, 0, 0)
 
   let cx=0, cy=0, cz=0
   mol.atoms.forEach(a => { cx+=a.x; cy+=a.y; cz+=a.z })
@@ -1055,14 +1056,22 @@ const mouse     = new THREE.Vector2()
 let _downX = 0, _downY = 0
 let _autoRotateEnabled = false
 let _rotateResumeTimer = null
+let _isWheeling = false, _wheelClear = null
 
-renderer.domElement.addEventListener('pointerdown', e => {
-  _downX = e.clientX; _downY = e.clientY
+renderer.domElement.addEventListener('pointerdown', e => { _downX = e.clientX; _downY = e.clientY })
+
+renderer.domElement.addEventListener('wheel', () => {
+  _isWheeling = true
+  clearTimeout(_wheelClear)
+  _wheelClear = setTimeout(() => { _isWheeling = false }, 150)
+}, { passive: true })
+
+controls.addEventListener('start', () => {
+  if (_isWheeling) return
   clearTimeout(_rotateResumeTimer)
   controls.autoRotate = false
 })
-
-renderer.domElement.addEventListener('pointerup', () => {
+controls.addEventListener('end', () => {
   if (!_autoRotateEnabled) return
   clearTimeout(_rotateResumeTimer)
   _rotateResumeTimer = setTimeout(() => { controls.autoRotate = true }, 700)
